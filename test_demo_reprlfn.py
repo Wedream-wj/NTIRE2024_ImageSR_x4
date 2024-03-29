@@ -38,16 +38,16 @@ def select_model(args, device):
         model.load_state_dict(torch.load(model_path), strict=True)
     elif model_id == 2:
         # HAT
-        from models.team02_HAT import HAT
-        name, data_range = f"{model_id:02}_HAT_baseline", 1.0
-        model_path = os.path.join('model_zoo', 'team02_hat.pth')
-        model = HAT(checkpoint=model_path)
+        # from models.team02_HAT import HAT
+        # name, data_range = f"{model_id:02}_HAT_baseline", 1.0
+        # model_path = os.path.join('model_zoo', 'team02_hat.pth')
+        # model = HAT(checkpoint=model_path)
 
         # RepRLFN
-        # from models.team02_RepRLFN import RepRLFN
-        # name, data_range = f"{model_id:02}_RepRLFN_baseline", 1.0
-        # model_path = os.path.join('model_zoo', 'team02_reprlfn.pth')
-        # model = RepRLFN(checkpoint=model_path, deploy=True)
+        from models.team02_RepRLFN import RepRLFN
+        name, data_range = f"{model_id:02}_RepRLFN_baseline", 1.0
+        model_path = os.path.join('model_zoo', 'team02_reprlfn.pth')
+        model = RepRLFN(checkpoint=model_path, deploy=True)
     else:
         raise NotImplementedError(f"Model {model_id} is not implemented.")
 

@@ -58,6 +58,13 @@ class RLFN(nn.Module):
                                                   upscale_factor=upscale)
 
     def forward(self, x):
+
+        output=forward_x8(x, self.forward_single)
+
+        return output
+
+
+    def forward_single(self, x):
         out_feature = self.conv_1(x)
 
         out_b1 = self.block_1(out_feature)
@@ -73,6 +80,64 @@ class RLFN(nn.Module):
         output = self.upsampler(out_low_resolution)
 
         return output
+
+
+
+# --------------------------------
+# self-ensemble for test
+# --------------------------------
+def forward_x8(lr_img, forward_function=None):
+    precision = 'single'
+    def _transform(v, op):
+        if precision != 'single': v = v.float()
+
+        v2np = v.data.cpu().numpy()
+        if op == 'v':
+            tfnp = v2np[:, :, :, ::-1].copy()
+        elif op == 'h':
+            tfnp = v2np[:, :, ::-1, :].copy()
+        elif op == 't':
+            tfnp = v2np.transpose((0, 1, 3, 2)).copy()
+
+        ret = torch.Tensor(tfnp).to(lr_img.device)
+        if precision == 'half': ret = ret.half()
+
+        return ret
+
+    self_ensemble_list = ['v', 'h', 't', 'hv', 'tv', 'th', 'thv']
+
+    list_x = [lr_img]
+    for tf in self_ensemble_list:
+        tf_len=len(tf)
+        if tf_len==1:
+            list_x.extend([_transform(lr_img, tf)])
+        elif tf_len==2:
+            list_x.extend([_transform(_transform(lr_img, tf[0]),tf[1])])
+        elif tf_len==3:
+            list_x.extend([_transform(_transform(_transform(lr_img, tf[0]), tf[1]),tf[2])])
+
+    list_y = []
+    for x in list_x:
+        y = forward_function(x)
+        list_y.append(y)
+
+    for i in range(len(list_y)):
+        if i == 0:
+            continue
+        tf=self_ensemble_list[i - 1]
+        tf_len=len(tf)
+        if tf_len==1:
+            list_y[i]=_transform(list_y[i], tf)
+        elif tf_len==2:
+            list_y[i]=_transform(_transform(list_y[i], tf[1]),tf[0])
+        elif tf_len==3:
+            list_y[i] =_transform(_transform(_transform(list_y[i], tf[2]), tf[1]),tf[0])
+
+    y = [torch.cat(list_y, dim=0).mean(dim=0, keepdim=True)]
+
+    if len(y) == 1: y = y[0]
+
+    return y
 
 
 def get_RLFN(checkpoint=None, deploy=True):

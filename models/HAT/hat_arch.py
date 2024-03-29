@@ -1,6 +1,8 @@
 import math
 import torch
 import torch.nn as nn
+import cv2
+import numpy as np
 # import torch.utils.checkpoint as checkpoint
 
 # from basicsr.utils.registry import ARCH_REGISTRY
@@ -978,8 +980,66 @@ class HAT(nn.Module):
 
         return x
 
-
     def forward(self, x):
+        _, _, h, w = x.size()
+        lq = x
+        lqnp = lq.data.squeeze().float().cpu().numpy()  # BCHW, RGB=>CHW, RGB
+        if lqnp.ndim == 3:
+            lqnp = np.transpose(lqnp, (1, 2, 0))  # CHW, RGB=>HWC, RGB
+        # horizontal
+        lqnp_h = cv2.flip(lqnp, 1)
+        # self.lqnp_h = torch.from_numpy(np.transpose(self.lqnp_h[:, :, [2, 1, 0]], (2, 0, 1))).float()
+        lqnp_h = torch.from_numpy(np.transpose(lqnp_h, (2, 0, 1))).float()  # HWC, RGB=>CHW, RGB
+        lqnp_h = lqnp_h.unsqueeze(0).to('cuda')  # CHW, RGB=> BCHW, RGB
+        print("horizontal!")
+        # rotate, 逆时针旋转90°
+        lqnp_r = lqnp.transpose(1, 0, 2)
+        # self.lqnp_r = torch.from_numpy(np.transpose(self.lqnp_r[:, :, [2, 1, 0]], (2, 0, 1))).float()
+        lqnp_r = torch.from_numpy(np.transpose(lqnp_r, (2, 0, 1))).float()  # HWC, RGB=>CHW, RGB
+        lqnp_r = lqnp_r.unsqueeze(0).to('cuda')  # CHW, RGB=> BCHW, RGB
+        print("rotate!")
+
+        img = lq
+        img_h = lqnp_h
+        img_r = lqnp_r
+
+        output = self.forward_single(img)
+        output_h = self.forward_single(img_h)
+        output_r = self.forward_single(img_r)
+
+        # restore flip
+        # self.output_h = self.output_h.data.squeeze().float().cpu().clamp_(0, 1).numpy()
+        output_h = output_h.data.squeeze().float().cpu().numpy()
+        if output_h.ndim == 3:
+            # self.output_h = np.transpose(self.output_h[[2, 1, 0], :, :], (1, 2, 0))
+            output_h = np.transpose(output_h, (1, 2, 0))  # CHW, RGB=>HWC, RGB
+        # self.output_h = (self.output_h * 255.0).round().astype(np.uint8)
+        output_h = cv2.flip(output_h, 1)  # flip back
+        # self.output_h = torch.from_numpy(np.transpose(self.output_h[:, :, [2, 1, 0]], (2, 0, 1))).float()
+        output_h = torch.from_numpy(np.transpose(output_h, (2, 0, 1))).float()  # HWC, RGB=>CHW, RGB
+        output_h = output_h.unsqueeze(0).to('cuda')
+
+        # restore rotate
+        # self.output_r = self.output_r.data.squeeze().float().cpu().clamp_(0, 1).numpy()
+        output_r = output_r.data.squeeze().float().cpu().numpy()
+        if output_r.ndim == 3:
+            # self.output_r = np.transpose(self.output_r[[2, 1, 0], :, :], (1, 2, 0))
+            output_r = np.transpose(output_r, (1, 2, 0))  # CHW, RGB=>HWC, RGB
+        # self.output_r = (self.output_r * 255.0).round().astype(np.uint8)
+        output_r = output_r.transpose(1, 0, 2)  # rotate back
+        # self.output_r = torch.from_numpy(np.transpose(self.output_r[:, :, [2, 1, 0]], (2, 0, 1))).float()
+        output_r = torch.from_numpy(np.transpose(output_r, (2, 0, 1))).float()  # HWC, RGB=>CHW, RGB
+        output_r = output_r.unsqueeze(0).to('cuda')
+
+        output = (output + output_h + output_r) / 3.0
+        # self.output = (self.output + self.output_h) / 2.0
+        # print("self.output.size():{}".format(output.size()))
+        print("data ensemble successfully!")
+
+        return output
+
+
+    def forward_single(self, x):
         """It will first crop input images to tiles, and then process each tile.
         Finally, all the processed tiles are merged into one images.
         Modified from: https://github.com/ata4/esrgan-launcher

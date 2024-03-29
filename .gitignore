@@ -5,3 +5,5 @@ results/
 data/
 model_zoo/team02_hat.pth
 model_zoo/team00*
+
+.idea
